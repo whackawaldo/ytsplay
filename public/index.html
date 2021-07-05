@@ -1,0 +1,369 @@
+<head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/picnic@6.5.5/picnic.min.css">
+    <script src="./polyfills.js"></script>
+
+    <style>
+        body {
+            color: white;
+            background-color: black;
+            display: flex;
+            align-items: center;
+        }
+
+        main {
+            width: 80%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        img.cover {
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+        }
+
+        button,
+        button:hover {
+            text-transform: uppercase;
+            border-color: transparent;
+            border-width: 8px;
+            border-style: solid;
+        }
+
+        button:focus {
+            border-color: blanchedalmond;
+            border-width: 8px;
+            border-style: solid;
+        }
+
+        div.carousel {
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: none;
+            margin-top: 16px;
+        }
+
+        div.carousel::-webkit-scrollbar {
+            display: none;
+        }
+
+        div.carousel button {
+            padding: 0;
+            background: none;
+            background-color: transparent;
+        }
+
+        div.carousel button img {
+            object-fit: contain;
+            filter: brightness(65%);
+        }
+
+        div.carousel button:focus img {
+            width: 320;
+            height: 480;
+            filter: brightness(125%);
+        }
+
+        #section-browse #search-container {
+            display: flex;
+            flex-direction: row;
+        }
+
+        #section-browse #search-button {
+            font-size: 32px;
+            border-radius: 32px;
+            border-color: white;
+            border-width: 8px;
+            border-style: solid;
+            width: 72px;
+            height: 72px;
+            padding: 8px;
+            margin-right: 8px;
+        }
+
+        #section-browse #search-input {
+            color: black;
+            font-size: 32px;
+            height: 72px;
+        }
+
+        #section-browse .title,
+        #section-browse .year {
+            margin: 0px;
+            padding: 0px;
+        }
+
+        #section-detail button {
+            margin-right: 1em;
+            margin-bottom: 1em;
+        }
+
+        #section-stream {
+            color: white;
+            position: absolute;
+            text-align: center;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+
+        #section-stream #video-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+
+<body>
+
+    <main>
+        <section id="section-browse" style="display:block">
+            <div class="flex one" style="padding-bottom: 32px;">
+                <div id="search-container">
+                    <img id="search-button" src="search.png" />
+                    <input id="search-input" type="text" style="flex-grow: 1;" />
+                </div>
+                <div id="browse-carousel" class="carousel"></div>
+                <h1 class="title" style="text-transform: uppercase;"></h1>
+                <h2 class="year" style="color: lightgray;"></h2>
+            </div>
+        </section>
+
+        <section id="section-detail" style="display:none">
+            <div class="flex three">
+                <div style="padding:16px;"><img id="detail-image" class="cover" /></div>
+                <div style="padding:12px 64px;" class="two-third">
+                    <div id="detail-buttons" class="half flex"></div>
+                    <h1 id="detail-title"></h1>
+                    <div style="padding:16px;" class="full">
+                        <span id="detail-synopsis"></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <section id="section-stream" style="display: none">
+        <video id="player" controls width="100%" height="100%"></video>
+        <h1 id="video-overlay">
+            Downloading... <span id="progress"></span>
+            <br />
+            <span id="speed"></span>
+        </h1>
+    </section>
+
+    <script async>
+        const GLOBAL_STATE = { token: null };
+        GLOBAL_STATE.movies = getJSON(`https://whackawaldo.github.io/ytsdb/movies.json`);
+
+        async function startStream(torrentUri, torrentFile) {
+            const params = new URLSearchParams();
+            // params.append('uri', encodeURIComponent(magnetURI));
+            params.append('uri', encodeURIComponent(torrentUri));
+            params.append('file', encodeURIComponent(torrentFile));
+            GLOBAL_STATE.token = (await getJSON(`/init?${params.toString()}`)).token;
+
+            const progressElement = document.querySelector('#progress');
+            const speedElement = document.querySelector('#speed');
+            progressElement.parentNode.style.display = 'block';
+            setTimeout(async function statusCheck() {
+                if (!GLOBAL_STATE.token) return;
+                const res = await getJSON(`/progress?token=${GLOBAL_STATE.token}`)
+                progressElement.innerText = `${Number(res.progress * 100).toFixed(0)}%`;
+                speedElement.innerText = `${Number(res.downloadSpeed / 1000).toFixed(0)} kb/s`;
+                if (res.progress > 0.1) {
+                    progressElement.parentNode.style.display = 'none';
+                    player.src = `/play?token=${GLOBAL_STATE.token}`;
+                    player.requestFullscreen();
+                    player.play();
+                } else {
+                    setTimeout(statusCheck, 200);
+                }
+            }, 200);
+        }
+
+        async function fetchMovies() {
+            const year = new Date().getFullYear();
+            return Object.values(await GLOBAL_STATE.movies)
+                .filter(mov => mov.year >= year - 1 && mov.numVotes > 10_000)
+                .sort((a, b) => b.numVotes - a.numVotes)
+                .slice(0, 24);
+        }
+
+        async function searchMovies(query) {
+            if (!query) return [];
+            query = query.toLocaleLowerCase();
+            return Object.values(await GLOBAL_STATE.movies)
+                .filter(mov => String(mov.title).toLocaleLowerCase().includes(query))
+                .sort((a, b) => b.numVotes - a.numVotes)
+                .slice(0, 24);
+        }
+
+        function movieBrowseButtonHandlerFactory(movie) {
+            return async function handler(event) {
+                console.log(movie);
+                document.querySelector('#detail-title').innerText = movie.title;
+                document.querySelector('#detail-image').src = movie.medium_cover_image;
+                document.querySelector('#detail-synopsis').innerText = movie.synopsis;
+                const buttons = document.querySelector('#detail-buttons').clear();
+
+                // TODO: animation
+                window.history.pushState(null, null, '#movie-detail');
+                sectionBrowse.style.display = 'none';
+                sectionDetail.style.display = 'block';
+
+                await Promise.all(['720p', '1080p'].map(async quality => {
+                    const torrentUrl = movie[quality];
+                    if (!torrentUrl) return;
+
+                    // Check to see if the media is playable
+                    const params = new URLSearchParams();
+                    // params.append('uri', encodeURIComponent(magnetURI));
+                    params.append('uri', encodeURIComponent(torrentUrl));
+                    const fileList = await getJSON(`/list?${params.toString()}`);
+                    const torrentFile = fileList.find(file => file.endsWith('mp4'));
+                    if (!torrentFile) return;
+
+                    const btn = buttons.attach('button');
+                    btn.innerText = `Play ${quality}`;
+                    btn.addEventListener('click', async event => {
+                        startStream(torrentUrl, torrentFile);
+                        // startStream(magnetURI);
+
+                        // TODO animation
+                        window.history.pushState(null, null, '#movie-stream');
+                        sectionDetail.style.display = 'none';
+                        sectionStream.style.display = 'block';
+                    });
+                }));
+
+                // Set focus on the first available button
+                buttons.children[0].focusAndScroll();
+            };
+        }
+
+        function displayMovieResults(movies, focus = true) {
+            const carousel = document.querySelector('#browse-carousel').clear();
+
+            // Handle empty movie result set
+            if (!movies?.length) {
+                // TODO
+                console.log('no movies');
+                return;
+            }
+
+            const yearHolder = document.querySelector('#section-browse .year');
+            const titleHolder = document.querySelector('#section-browse .title');
+
+            movies.forEach(mov => {
+                const button = carousel.attach('button');
+                button.attach('img', { src: mov.medium_cover_image, width: 256, height: 384 });
+                button.addEventListener('focus', event => {
+                    yearHolder.innerText = mov.year;
+                    titleHolder.innerText = mov.title;
+                });
+                button.addEventListener('click', movieBrowseButtonHandlerFactory(mov));
+            });
+
+            // Set focus on the first available movie
+            focus && carousel.children[0].focusAndScroll();
+        }
+
+        // Set the starting hash
+        window.location.hash = '#movie-browse';
+
+        // Display the initial list of movies
+        fetchMovies().then(displayMovieResults);
+
+        // Cache common elements
+        const player = document.querySelector('video');
+        const sectionBrowse = document.querySelector('#section-browse');
+        const sectionDetail = document.querySelector('#section-detail');
+        const sectionStream = document.querySelector('#section-stream');
+        const carousel = document.querySelector('#browse-carousel');
+
+        // Handle instant search queries
+        document.querySelector('#search-input').addEventListener('keyup', event => {
+            GLOBAL_STATE.searchDebouncer && clearTimeout(GLOBAL_STATE.searchDebouncer);
+            GLOBAL_STATE.searchDebouncer = setTimeout(() => {
+                const query = event.target.value;
+                if (query) {
+                    searchMovies(query).then(movies => displayMovieResults(movies, false));
+                } else {
+                    fetchMovies().then(movies => displayMovieResults(movies, false));
+                }
+            }, 500);
+        });
+
+        // Handle focus shift using arrow navigation keys
+        document.body.addEventListener('keydown', event => {
+            const section = new URL(window.location.href).hash;
+            console.log(event.key);
+            switch (event.key) {
+                case 'Escape':
+                    if (section === '#movie-browse') {
+                        document.querySelector('#search-input').value = '';
+                        fetchMovies().then(displayMovieResults);
+                    } else {
+                        window.history.back();
+                    }
+                    return true;
+                case 'ArrowUp':
+                    if (section === '#movie-browse') {
+                        document.querySelector('#search-input').focusAndScroll();
+                    }
+                    return true;
+                case 'ArrowDown':
+                    if (section === '#movie-browse') {
+                        carousel.querySelector('button').focusAndScroll();
+                    }
+                    return;
+                case 'ArrowLeft':
+                    event.target.prev()?.focusAndScroll();
+                    return true;
+                case 'ArrowRight':
+                    event.target.next()?.focusAndScroll();
+                    return true;
+                case 'f':
+                case 'F':
+                    if (section === '#movie-stream') {
+                        player.requestFullscreen();
+                    }
+                    return true;
+            }
+        });
+
+        // Handle push/pop state manually
+        window.onpopstate = async function (event) {
+            sectionBrowse.style.display = 'none';
+            sectionDetail.style.display = 'none';
+            sectionStream.style.display = 'none';
+            switch (new URL(window.location.href).hash) {
+                case '':
+                    sectionBrowse.style.display = 'block';
+                    carousel.querySelector('button')?.focusAndScroll();
+                    break;
+                case '#movie-browse':
+                    sectionBrowse.style.display = 'block';
+                    carousel.querySelector('button')?.focusAndScroll();
+                    break;
+                case '#movie-detail':
+                    sectionDetail.style.display = 'block';
+                    sectionDetail.querySelector('button')?.focusAndScroll();
+                    break;
+            }
+
+            // Stop any media playback
+            player.pause();
+            player.src = null;
+
+            // Remove any existing downloads
+            if (GLOBAL_STATE.token) getJSON(`/stop?token=${GLOBAL_STATE.token}`);
+
+            GLOBAL_STATE.token = null;
+        };
+    </script>
+</body>
