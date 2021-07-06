@@ -87,10 +87,14 @@
             height: 72px;
         }
 
-        #section-browse .title,
-        #section-browse .year {
+        h1.title,
+        h2.subtitle {
             margin: 0px;
             padding: 0px;
+        }
+
+        p.synopsis {
+            text-align: justify;
         }
 
         #section-detail button {
@@ -128,7 +132,7 @@
                 </div>
                 <div id="browse-carousel" class="carousel"></div>
                 <h1 class="title" style="text-transform: uppercase;"></h1>
-                <h2 class="year" style="color: lightgray;"></h2>
+                <h2 class="subtitle" style="color: lightgray;"></h2>
             </div>
         </section>
 
@@ -137,10 +141,9 @@
                 <div style="padding:16px;"><img id="detail-image" class="cover" /></div>
                 <div style="padding:12px 64px;" class="two-third">
                     <div id="detail-buttons" class="half flex"></div>
-                    <h1 id="detail-title"></h1>
-                    <div style="padding:16px;" class="full">
-                        <span id="detail-synopsis"></span>
-                    </div>
+                    <h1 id="detail-title" class="title"></h1>
+                    <h2 class="subtitle"></h2>
+                    <p id="detail-synopsis" class="full synopsis"></p>
                 </div>
             </div>
         </section>
@@ -205,9 +208,10 @@
         function movieBrowseButtonHandlerFactory(movie) {
             return async function handler(event) {
                 console.log(movie);
-                document.querySelector('#detail-title').innerText = movie.title;
                 document.querySelector('#detail-image').src = movie.medium_cover_image;
                 document.querySelector('#detail-synopsis').innerText = movie.synopsis;
+                document.querySelector('#section-detail .title').innerText = movie.title;
+                document.querySelector('#section-detail .subtitle').innerText = `${movie.year} (${movie.runtime} mins)`;
                 const buttons = document.querySelector('#detail-buttons').clear();
 
                 // TODO: animation
@@ -219,6 +223,10 @@
                     const torrentUrl = movie[quality];
                     if (!torrentUrl) return;
 
+                    // Add button to the UI but keep it disabled
+                    const btn = buttons.attach('button', { disabled: true });
+                    btn.innerText = `Play ${quality}`;
+
                     // Check to see if the media is playable
                     const params = new URLSearchParams();
                     // params.append('uri', encodeURIComponent(magnetURI));
@@ -227,8 +235,8 @@
                     const torrentFile = fileList.find(file => file.endsWith('mp4'));
                     if (!torrentFile) return;
 
-                    const btn = buttons.attach('button');
-                    btn.innerText = `Play ${quality}`;
+                    // Enable button and add click handler
+                    btn.removeAttribute('disabled');
                     btn.addEventListener('click', async event => {
                         startStream(torrentUrl, torrentFile);
                         // startStream(magnetURI);
@@ -255,15 +263,15 @@
                 return;
             }
 
-            const yearHolder = document.querySelector('#section-browse .year');
             const titleHolder = document.querySelector('#section-browse .title');
+            const subtitleHolder = document.querySelector('#section-browse .subtitle');
 
             movies.forEach(mov => {
                 const button = carousel.attach('button');
                 button.attach('img', { src: mov.medium_cover_image, width: 256, height: 384 });
                 button.addEventListener('focus', event => {
-                    yearHolder.innerText = mov.year;
                     titleHolder.innerText = mov.title;
+                    subtitleHolder.innerText = `${mov.year} (${mov.runtime} mins)`;
                 });
                 button.addEventListener('click', movieBrowseButtonHandlerFactory(mov));
             });

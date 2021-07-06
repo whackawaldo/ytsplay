@@ -7,7 +7,7 @@ const TEST_TORRENT = 'https://webtorrent.io/torrents/big-buck-bunny.torrent';
 const TORRENT_OBJ_CACHE = {};
 const TORRENT_FILE_CACHE = {};
 const client = new WebTorrent();
-const hostname = '127.0.0.1';
+const hostname = '0.0.0.0';
 const port = 3000;
 
 const app = express();
